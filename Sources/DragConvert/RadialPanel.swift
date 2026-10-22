@@ -5,8 +5,6 @@ final class RadialPanel: NSPanel {
     static let size: CGFloat = 600
     let radial = RadialView(frame: NSRect(x: 0, y: 0, width: RadialPanel.size, height: RadialPanel.size))
 
-    /// กระจกฝ้าด้านหลัง (เบลอสิ่งที่อยู่ใต้วงล้อ) — ตัดรูปตามวงล้อด้วย maskImage
-    private let glass = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: RadialPanel.size, height: RadialPanel.size))
 
     convenience init() {
         self.init(
@@ -24,18 +22,8 @@ final class RadialPanel: NSPanel {
         hidesOnDeactivate = false
         acceptsMouseMovedEvents = true
 
-        glass.material = .popover
-        glass.blendingMode = .behindWindow
-        glass.state = .active
-        glass.appearance = NSAppearance(named: .aqua)   // ขาวเสมอ แม้เครื่องตั้ง Dark Mode
-        glass.maskImage = NSImage(size: NSSize(width: 1, height: 1))
 
-        let container = NSView(frame: glass.frame)
-        container.addSubview(glass)
-        container.addSubview(radial)
-        contentView = container
-
-        radial.onShape = { [weak self] mask in self?.glass.maskImage = mask }
+        contentView = radial
     }
 
     override var canBecomeKey: Bool { false }
@@ -63,7 +51,6 @@ final class RadialPanel: NSPanel {
 /// วงล้อเลือกฟอร์แมต ขยายแบบ Dock — ช่องที่ชี้จะใหญ่ขึ้น ช่องข้าง ๆ ขยายลดหลั่นตาม
 final class RadialView: NSView {
     var onPick: ((FormatOption, [URL]) -> Void)?
-    var onShape: ((NSImage) -> Void)?
     var isPreview = false
 
     private var files: [URL] = []
@@ -71,9 +58,12 @@ final class RadialView: NSView {
     private var hovered: Int?
 
     // รูปทรงปกติ
-    private let innerRadius: CGFloat = 72
-    private let outerRadius: CGFloat = 180
-    private let gapDegrees: CGFloat = 1.4
+    private let innerRadius: CGFloat = 96      // ขอบในของช่อง (วงกลมกลางใหญ่)
+    private let outerRadius: CGFloat = 206     // ขอบนอกของช่อง
+    private let hubRadius: CGFloat = 86
+    private let gap: CGFloat = 9               // ร่องระหว่างช่อง (px เท่ากันตลอดความยาว)
+    private let corner: CGFloat = 16           // ความมนของมุมช่อง
+    private let gapDegrees: CGFloat = 0        // ไม่ใช้แล้ว (ร่องคิดเป็น px ด้านล่าง)
 
     // ปรับความแรงของการขยาย (แบบ Dock)
     private let maxGrow: CGFloat = 44      // ช่องที่ชี้ยื่นออกไปอีกกี่ px
@@ -81,12 +71,12 @@ final class RadialView: NSView {
     private let spread: CGFloat = 1.7      // ผลการขยายลามไปกี่ช่องข้าง ๆ
     private let smoothing: Double = 16     // ยิ่งมากยิ่งตามเมาส์เร็ว
 
-    // สีขาวใส
-    private let glassTint = NSColor.white.withAlphaComponent(0.38)
-    private let glassHover = NSColor.white.withAlphaComponent(0.88)
-    private let glassEdge = NSColor.white.withAlphaComponent(0.75)
-    private let ink = NSColor(white: 0.1, alpha: 1)
-    private let inkSoft = NSColor(white: 0.1, alpha: 0.55)
+    // สีครีมแบบกระดาษ มีลายเส้นเฉียง
+    private let paper = NSColor(red: 0.953, green: 0.937, blue: 0.910, alpha: 1)
+    private let paperHover = NSColor(red: 1.0, green: 0.995, blue: 0.985, alpha: 1)
+    private let stripe = NSColor(red: 0.55, green: 0.50, blue: 0.42, alpha: 0.10)
+    private let ink = NSColor(red: 0.13, green: 0.12, blue: 0.11, alpha: 1)
+    private let inkSoft = NSColor(red: 0.13, green: 0.12, blue: 0.11, alpha: 0.5)
 
     // สถานะแอนิเมชัน
     private var pointer: NSPoint?
@@ -177,19 +167,56 @@ final class RadialView: NSView {
         return nil
     }
 
-    private func slicePath(_ s: Slice) -> NSBezierPath {
-        let start = s.start + gapDegrees / 2
-        let end = s.end - gapDegrees / 2
-        let path = NSBezierPath()
-        path.appendArc(withCenter: center, radius: s.outer - 10, startAngle: 90 - start, endAngle: 90 - end, clockwise: true)
-        path.appendArc(withCenter: center, radius: innerRadius, startAngle: 90 - end, endAngle: 90 - start, clockwise: false)
-        path.close()
-        return path
+    /// ช่องรูปพัดมุมมน: หดเข้าด้านในเท่ากับ corner แล้วขยายกลับด้วยเส้นขอบปลายมน
+    private func sliceCGPath(_ s: Slice) -> CGPath {
+        let rIn = innerRadius + corner, rOut = s.outer - 10 - corner
+        let halfGap = gap / 2 + corner
+        // มุมที่ต้องหดเพื่อให้ร่องกว้างเท่ากันทั้งด้านในและด้านนอก
+        let dIn = asin(min(1, halfGap / rIn)) * 180 / .pi
+        let dOut = asin(min(1, halfGap / rOut)) * 180 / .pi
+        func rad(_ deg: CGFloat) -> CGFloat { (90 - deg) * .pi / 180 }
+
+        let core = CGMutablePath()
+        core.addArc(center: center, radius: rOut, startAngle: rad(s.start + dOut), endAngle: rad(s.end - dOut), clockwise: true)
+        core.addArc(center: center, radius: rIn, startAngle: rad(s.end - dIn), endAngle: rad(s.start + dIn), clockwise: false)
+        core.closeSubpath()
+
+        let rim = core.copy(strokingWithWidth: corner * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
+        let shape = CGMutablePath()
+        shape.addPath(core)
+        shape.addPath(rim)
+        return shape
     }
 
-    private var hubPath: NSBezierPath {
-        let r = innerRadius - 8
-        return NSBezierPath(ovalIn: NSRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2))
+    private var hubCGPath: CGPath {
+        CGPath(ellipseIn: CGRect(x: center.x - hubRadius, y: center.y - hubRadius,
+                                 width: hubRadius * 2, height: hubRadius * 2), transform: nil)
+    }
+
+    /// เติมสีกระดาษ + ลายเส้นเฉียง + เงา ให้รูปทรงที่ส่งมา
+    private func fillPaper(_ ctx: CGContext, _ path: CGPath, color: NSColor, lift: CGFloat) {
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -2 - lift * 4), blur: 6 + lift * 14,
+                      color: NSColor.black.withAlphaComponent(0.16 + lift * 0.10).cgColor)
+        ctx.addPath(path)
+        ctx.setFillColor(color.cgColor)
+        ctx.fillPath()
+        ctx.restoreGState()
+
+        ctx.saveGState()
+        ctx.addPath(path)
+        ctx.clip()
+        let box = path.boundingBox
+        ctx.setStrokeColor(stripe.cgColor)
+        ctx.setLineWidth(0.8)
+        var x = box.minX - box.height
+        while x < box.maxX {
+            ctx.move(to: CGPoint(x: x, y: box.minY))
+            ctx.addLine(to: CGPoint(x: x + box.height, y: box.maxY))
+            x += 3.2
+        }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     // MARK: แอนิเมชัน
@@ -219,7 +246,7 @@ final class RadialView: NSView {
         let n = options.count
         guard let p = pointer, n > 0 else { return Array(repeating: 0, count: n) }
         let dist = hypot(p.x - center.x, p.y - center.y)
-        guard dist > innerRadius * 0.8, dist < outerRadius + maxGrow + 60 else {
+        guard dist > hubRadius, dist < outerRadius + maxGrow + 60 else {
             return Array(repeating: 0, count: n)
         }
         return (0..<n).map { k in
@@ -242,6 +269,29 @@ final class RadialView: NSView {
         let now = CACurrentMediaTime()
         let dt = min(now - lastTick, 1.0 / 20.0)
         lastTick = now
+        if advance(dt: dt, now: now) {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    // MARK: ขับแอนิเมชันเองทีละเฟรม (ใช้เรนเดอร์ GIF ตัวอย่าง)
+
+    func demoAppear(at now: CFTimeInterval) {
+        appear = 0
+        appearStart = now
+    }
+
+    func demoStep(pointer p: NSPoint?, dt: Double, now: CFTimeInterval) {
+        pointer = p
+        if let p { anchor = min(angle(of: p) / step, CGFloat(options.count) - 0.0001) }
+        _ = advance(dt: dt, now: now)
+    }
+
+    var hoveredOption: FormatOption? { hovered.map { options[$0] } }
+
+    /// เดินแอนิเมชันไป dt วินาที คืนค่า true เมื่อทุกอย่างหยุดนิ่งแล้ว
+    private func advance(dt: Double, now: CFTimeInterval) -> Bool {
         let k = CGFloat(1 - exp(-dt * smoothing))
 
         var settled = true
@@ -264,10 +314,7 @@ final class RadialView: NSView {
         }
 
         needsDisplay = true
-        if settled {
-            timer?.invalidate()
-            timer = nil
-        }
+        return settled
     }
 
     /// เด้งเกินนิดหนึ่งแล้วกลับ ตอนวงล้อโผล่
@@ -283,25 +330,6 @@ final class RadialView: NSView {
 
         let scale = max(appear, 0.01)
         let baseAlpha = min(1, max(0, appear * 1.6))
-        // ขยายรอบจุดกลาง: x' = s·x + c·(1 − s)
-        let zoom = AffineTransform(m11: scale, m12: 0, m21: 0, m22: scale,
-                                   tX: center.x * (1 - scale), tY: center.y * (1 - scale))
-
-        let slices = sliceLayout()
-        let order = slices.indices.sorted { mag[$0] < mag[$1] }   // ช่องที่ใหญ่สุดวาดทีหลัง อยู่บนสุด
-        let paths = slices.map(slicePath)
-
-        // ส่งรูปทรงไปตัดกระจกฝ้าด้านหลัง
-        let shape = NSBezierPath()
-        paths.forEach { shape.append($0) }
-        shape.append(hubPath)
-        shape.transform(using: zoom)
-        let maskAlpha = baseAlpha
-        onShape?(NSImage(size: bounds.size, flipped: false) { _ in
-            NSColor.black.withAlphaComponent(maskAlpha).setFill()
-            shape.fill()
-            return true
-        })
 
         ctx.saveGState()
         ctx.setAlpha(baseAlpha)
@@ -309,55 +337,32 @@ final class RadialView: NSView {
         ctx.scaleBy(x: scale, y: scale)
         ctx.translateBy(x: -center.x, y: -center.y)
 
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.14)
-        shadow.shadowOffset = NSSize(width: 0, height: -3)
+        let slices = sliceLayout()
+        let order = slices.indices.sorted { mag[$0] < mag[$1] }   // ช่องที่ใหญ่สุดวาดทีหลัง อยู่บนสุด
 
         for i in order {
-            let path = paths[i]
-            let isHover = hovered == i
-            let m = mag[i]
-
-            NSGraphicsContext.saveGraphicsState()
-            shadow.shadowBlurRadius = 10 + m * 12
-            shadow.set()
-            (isHover ? glassHover : glassTint).setFill()
-            path.fill()
-            NSGraphicsContext.restoreGraphicsState()
-
-            glassEdge.setStroke()
-            path.lineWidth = 1
-            path.stroke()
-
             let s = slices[i]
+            let m = mag[i]
+            fillPaper(ctx, sliceCGPath(s), color: hovered == i ? paperHover : paper, lift: m)
+
             let mid: CGFloat = (s.start + s.end) / 2 * CGFloat.pi / 180
-            let r = (innerRadius + s.outer - 10) / 2 + m * 4
+            let r = (innerRadius + s.outer - 10) / 2 + m * 2
             let p = NSPoint(x: center.x + sin(mid) * r, y: center.y + cos(mid) * r)
-            let grow = 1 + m * 0.32
-            drawCentered(options[i].title, at: NSPoint(x: p.x, y: p.y + 8 * grow),
-                         font: .systemFont(ofSize: 15 * grow, weight: .semibold), color: ink)
-            drawCentered(options[i].detail, at: NSPoint(x: p.x, y: p.y - 10 * grow),
-                         font: .systemFont(ofSize: 11 * grow, weight: .medium), color: inkSoft)
+            let grow = 1 + m * 0.28
+            drawCentered(options[i].title, at: NSPoint(x: p.x, y: p.y + 9 * grow),
+                         font: .systemFont(ofSize: 19 * grow, weight: .regular), color: ink)
+            drawCentered(options[i].detail, at: NSPoint(x: p.x, y: p.y - 12 * grow),
+                         font: .systemFont(ofSize: 13 * grow, weight: .regular), color: inkSoft)
         }
 
-        // วงกลมตรงกลาง
-        let hub = hubPath
-        NSGraphicsContext.saveGraphicsState()
-        shadow.shadowBlurRadius = 10
-        shadow.set()
-        glassTint.setFill()
-        hub.fill()
-        NSGraphicsContext.restoreGraphicsState()
-        glassEdge.setStroke()
-        hub.lineWidth = 1
-        hub.stroke()
-
+        // วงกลมกลาง
+        fillPaper(ctx, hubCGPath, color: paper, lift: 0)
         let ext = files.first?.pathExtension.uppercased() ?? ""
-        drawCentered("\(files.count) × \(ext)", at: NSPoint(x: center.x, y: center.y + 10),
-                     font: .systemFont(ofSize: 17, weight: .bold), color: ink)
+        drawCentered("\(files.count) × \(ext)", at: NSPoint(x: center.x, y: center.y + 13),
+                     font: .systemFont(ofSize: 24, weight: .regular), color: ink)
         drawCentered(isPreview ? "คลิกเพื่อปิด" : "ปล่อยตรงนี้ = ยกเลิก",
-                     at: NSPoint(x: center.x, y: center.y - 12),
-                     font: .systemFont(ofSize: 10, weight: .regular), color: inkSoft)
+                     at: NSPoint(x: center.x, y: center.y - 17),
+                     font: .systemFont(ofSize: 13, weight: .regular), color: inkSoft)
 
         // ป้ายชื่อแบบ Dock
         if let t = tipIndex, t < slices.count, tipAlpha > 0.01 {
@@ -368,6 +373,7 @@ final class RadialView: NSView {
         ctx.restoreGState()
     }
 
+    /// ป้ายชื่อเม็ดยาสีเข้ม ลอยถัดจากขอบนอกของช่อง (แบบป้ายชื่อใน Dock)
     private func drawTooltip(for option: FormatOption, slice s: Slice) {
         let label = "\(option.title) · \(option.detail)"
         let attrs: [NSAttributedString.Key: Any] = [
@@ -375,24 +381,15 @@ final class RadialView: NSView {
             .foregroundColor: NSColor.white,
         ]
         let size = (label as NSString).size(withAttributes: attrs)
-        let w = size.width + 22, h = size.height + 10
+        let w = size.width + 24, h = size.height + 10
 
         let mid: CGFloat = (s.start + s.end) / 2 * CGFloat.pi / 180
-        let u = CGPoint(x: sin(mid), y: cos(mid))            // ทิศจากกลางออกไปหาช่อง
-        let perp = CGPoint(x: -u.y, y: u.x)
-        let lift = (1 - tipAlpha) * 8                         // ลอยขึ้นตอนโผล่
-        let base = s.outer - 2 + lift
-
-        let tip = CGPoint(x: center.x + u.x * base, y: center.y + u.y * base)
-        let neck = CGPoint(x: center.x + u.x * (base + 9), y: center.y + u.y * (base + 9))
-        let arrow = NSBezierPath()
-        arrow.move(to: tip)
-        arrow.line(to: CGPoint(x: neck.x + perp.x * 8, y: neck.y + perp.y * 8))
-        arrow.line(to: CGPoint(x: neck.x - perp.x * 8, y: neck.y - perp.y * 8))
-        arrow.close()
-
-        let reach = abs(u.x) * w / 2 + abs(u.y) * h / 2
-        let c = CGPoint(x: neck.x + u.x * (reach - 1), y: neck.y + u.y * (reach - 1))
+        let u = CGPoint(x: sin(mid), y: cos(mid))
+        let lift = (1 - tipAlpha) * 8
+        let edge = s.outer - 10 + 10 + lift
+        // ระยะจากจุดกลางกล่องถึงขอบ ในทิศ u (ใช้กล่องเม็ดยา ≈ วงรี)
+        let reach = 1 / sqrt(pow(u.x / (w / 2), 2) + pow(u.y / (h / 2), 2))
+        let c = CGPoint(x: center.x + u.x * (edge + reach), y: center.y + u.y * (edge + reach))
         let rect = NSRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
         let bubble = NSBezierPath(roundedRect: rect, xRadius: h / 2, yRadius: h / 2)
 
@@ -403,9 +400,8 @@ final class RadialView: NSView {
 
         NSGraphicsContext.saveGraphicsState()
         shadow.set()
-        NSColor(white: 0.22, alpha: 0.94).setFill()
+        NSColor(white: 0.2, alpha: 0.92).setFill()
         bubble.fill()
-        arrow.fill()
         NSGraphicsContext.restoreGraphicsState()
 
         (label as NSString).draw(at: NSPoint(x: c.x - size.width / 2, y: c.y - size.height / 2), withAttributes: attrs)

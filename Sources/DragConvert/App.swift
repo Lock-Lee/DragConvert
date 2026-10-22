@@ -21,6 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // เรนเดอร์เฟรม GIF ตัวอย่างแล้วออก: --render-demo <โฟลเดอร์>
+        if let i = CommandLine.arguments.firstIndex(of: "--render-demo"), CommandLine.arguments.count > i + 1 {
+            DemoRenderer.run(outDir: CommandLine.arguments[i + 1])
+            exit(0)
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         setIcon(busy: false)
         buildMenu()
