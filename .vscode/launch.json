@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DragConvert}",
+            "name": "Debug DragConvert",
+            "target": "DragConvert",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug DragConvert"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DragConvert}",
+            "name": "Release DragConvert",
+            "target": "DragConvert",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release DragConvert"
+        }
+    ]
+}
