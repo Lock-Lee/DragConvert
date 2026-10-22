@@ -40,11 +40,12 @@ open Package.swift   # เปิดใน Xcode
 
 เปิดใน Xcode แล้วอยากเห็นวงล้อทันที: Product → Scheme → Edit Scheme… → Run → Arguments → เพิ่ม `--preview` แล้วกด ⌘R
 
-ไอคอนวาดด้วย `scripts/make_icon.swift` (แก้สีหรือรูปทรงแล้วรันใหม่ได้)
+ไอคอนวาดด้วย `scripts/make_icon.swift` ส่วนพื้นหลังหน้าติดตั้ง DMG วาดด้วย `scripts/make_dmg_bg.swift` (แก้สีหรือรูปทรงแล้วรันใหม่ได้)
 
 ```
 Sources/DragConvert/
 ├── App.swift          เริ่มแอป + เมนูบน Menu Bar
+├── MenuBarIcon.swift  ไอคอนวงล้อบน Menu Bar (หมุนตอนกำลังแปลง)
 ├── DragMonitor.swift  ตรวจว่ากำลังลากไฟล์ + กด Shift
 ├── RadialPanel.swift  วงล้อเลือกฟอร์แมต
 ├── Formats.swift      รายการฟอร์แมตและคำสั่งแปลง

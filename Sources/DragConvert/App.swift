@@ -66,9 +66,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var spinTimer: Timer?
+    private var spinFrame = 1
+
+    /// ปกติ = วงล้อนิ่ง, กำลังแปลง = ช่องทึบวิ่งวนรอบวง
     private func setIcon(busy: Bool) {
-        let name = busy ? "hourglass" : "arrow.triangle.2.circlepath"
-        statusItem.button?.image = NSImage(systemSymbolName: name, accessibilityDescription: "DragConvert")
+        if busy, spinTimer == nil {
+            let t = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.spinFrame += 1
+                    self.statusItem.button?.image = MenuBarIcon.make(highlight: self.spinFrame)
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            spinTimer = t
+        } else if !busy {
+            spinTimer?.invalidate()
+            spinTimer = nil
+            spinFrame = 1
+            statusItem.button?.image = MenuBarIcon.make()
+        }
     }
 
     private func buildMenu() {
