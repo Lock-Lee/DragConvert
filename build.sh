@@ -26,6 +26,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key>          <string>1</string>
     <key>LSMinimumSystemVersion</key>   <string>13.0</string>
     <key>CFBundleIconFile</key>         <string>AppIcon</string>
+    <key>NSDesktopFolderUsageDescription</key>    <string>DragConvert ต้องอ่านไฟล์ที่คุณลากมาแปลง และบันทึกไฟล์ใหม่ไว้ข้างไฟล์เดิม</string>
+    <key>NSDocumentsFolderUsageDescription</key>  <string>DragConvert ต้องอ่านไฟล์ที่คุณลากมาแปลง และบันทึกไฟล์ใหม่ไว้ข้างไฟล์เดิม</string>
+    <key>NSDownloadsFolderUsageDescription</key>  <string>DragConvert ต้องอ่านไฟล์ที่คุณลากมาแปลง และบันทึกไฟล์ใหม่ไว้ข้างไฟล์เดิม</string>
+    <key>NSRemovableVolumesUsageDescription</key> <string>DragConvert ต้องอ่านไฟล์ที่คุณลากมาแปลงจากไดรฟ์ภายนอก</string>
+    <key>NSNetworkVolumesUsageDescription</key>   <string>DragConvert ต้องอ่านไฟล์ที่คุณลากมาแปลงจากไดรฟ์ในเครือข่าย</string>
     <key>LSUIElement</key>              <true/>
     <key>NSHighResolutionCapable</key>  <true/>
 </dict>
@@ -33,7 +38,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 # เซ็นแบบ ad-hoc ให้ macOS ยอมเปิด (ไม่ต้องมีบัญชี Developer)
-codesign --force --deep --sign - "$APP"
+# ผูกตัวตนแอปกับ bundle id เพื่อให้สิทธิ์เข้าถึงโฟลเดอร์ที่อนุญาตไว้ ยังอยู่หลัง build ใหม่
+codesign --force --deep --sign - \
+  --identifier local.dragconvert \
+  -r='designated => identifier "local.dragconvert"' "$APP"
 
 [[ "${1:-}" == "--no-install" ]] && { echo "✓ build/DragConvert.app"; exit 0; }
 

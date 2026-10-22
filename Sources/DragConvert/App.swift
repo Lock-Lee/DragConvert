@@ -55,8 +55,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         monitor.start()
 
+        // ทดสอบแปลงโดยไม่ต้องลาก: --convert <ไฟล์> <title> [detail]
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--convert"), args.count > i + 2 {
+            let file = URL(fileURLWithPath: args[i + 1])
+            let match = Formats.options(for: file).first {
+                $0.title == args[i + 2] && (args.count <= i + 3 || $0.detail == args[i + 3])
+            }
+            if let match { Converter.shared.convert([file], with: match) }
+            else { print("ไม่พบฟอร์แมต: \(Formats.options(for: file).map { "\($0.title)/\($0.detail)" })") }
+        }
+
         // รันจาก Xcode ใส่ argument --preview เพื่อโชว์วงล้อทันที
         if CommandLine.arguments.contains("--preview") { showPreview() }
+
+        // ขอสิทธิ์โฟลเดอร์ตอนเปิดครั้งแรก (ข้ามเมื่อเป็นโหมดทดสอบจาก Terminal)
+        if !args.contains("--convert") && !args.contains("--preview") {
+            Permissions.requestOnFirstLaunch()
+        }
 
         if Converter.findTool("ffmpeg") == nil {
             Converter.alert(
@@ -110,6 +126,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let perm = NSMenuItem(title: "ตรวจสอบสิทธิ์เข้าถึงไฟล์…", action: #selector(checkPermissions), keyEquivalent: "")
+        perm.target = self
+        menu.addItem(perm)
+
+        menu.addItem(.separator())
+
         let login = NSMenuItem(title: "เปิดอัตโนมัติตอนเข้าเครื่อง", action: #selector(toggleLogin(_:)), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -129,6 +151,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frame = NSScreen.main?.visibleFrame ?? .zero
         panel.show(at: NSPoint(x: frame.midX, y: frame.midY), files: [sample],
                    options: Formats.options(for: sample), preview: true)
+    }
+
+    @objc private func checkPermissions() {
+        Permissions.request()
+        // ถ้าได้ครบแล้ว request() จะไม่แสดงอะไร เลยโชว์สถานะให้เห็นเสมอเมื่อกดจากเมนู
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Permissions.status().allSatisfy({ $0.1 }) { Permissions.showStatus() }
+        }
     }
 
     @objc private func toggleLogin(_ item: NSMenuItem) {

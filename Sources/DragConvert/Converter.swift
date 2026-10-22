@@ -33,7 +33,11 @@ final class Converter {
                     NSWorkspace.shared.activateFileViewerSelecting(done)
                 }
                 if !failed.isEmpty {
-                    Converter.alert("แปลงไม่สำเร็จบางไฟล์", failed.joined(separator: "\n\n"))
+                    if failed.contains(where: { $0.contains("ยังไม่อนุญาต") }) {
+                        Permissions.showStatus()
+                    } else {
+                        Converter.alert("แปลงไม่สำเร็จบางไฟล์", failed.joined(separator: "\n\n"))
+                    }
                 }
             }
         }
@@ -44,6 +48,19 @@ final class Converter {
     nonisolated private static func convertOne(_ input: URL, _ option: FormatOption) throws -> [URL] {
         let base = input.deletingPathExtension().lastPathComponent + option.suffix
         let folder = input.deletingLastPathComponent()
+
+        // เปิดไฟล์จากตัวแอปเองก่อน ให้ macOS ถามสิทธิ์ Desktop/Documents/Downloads
+        // (ffmpeg/sips ที่เรียกทีหลังจะได้สิทธิ์ต่อจากแอป)
+        do {
+            let h = try FileHandle(forReadingFrom: input)
+            _ = try h.read(upToCount: 1)
+            try h.close()
+        } catch {
+            throw ConvertError("""
+                เปิดไฟล์ไม่ได้ — macOS ยังไม่อนุญาตให้ DragConvert เข้าถึงโฟลเดอร์นี้
+                ไปที่ System Settings → Privacy & Security → Files and Folders → DragConvert แล้วเปิดสิทธิ์
+                """)
+        }
 
         switch option.tool {
         case .ffmpeg(let args):
